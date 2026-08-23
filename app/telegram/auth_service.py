@@ -42,22 +42,22 @@ _CODE_TYPE_MESSAGES = {
 def describe_sent_code(sent: types.auth.SentCode) -> dict:
     """Map a Telegram SentCode to a stable method name and Persian message."""
     type_ = sent.type
-    if isinstance(type_, types.SentCodeTypeApp):
+    if isinstance(type_, types.auth.SentCodeTypeApp):
         method = "app"
         length = getattr(type_, "length", None)
-    elif isinstance(type_, types.SentCodeTypeSms):
+    elif isinstance(type_, types.auth.SentCodeTypeSms):
         method = "sms"
         length = getattr(type_, "length", None)
-    elif isinstance(type_, types.SentCodeTypeCall):
+    elif isinstance(type_, types.auth.SentCodeTypeCall):
         method = "call"
         length = getattr(type_, "length", None)
-    elif isinstance(type_, types.SentCodeTypeFlashCall):
+    elif isinstance(type_, types.auth.SentCodeTypeFlashCall):
         method = "flash_call"
         length = None  # code is derived from the phone number
-    elif isinstance(type_, types.SentCodeTypeEmailCode):
+    elif isinstance(type_, types.auth.SentCodeTypeEmailCode):
         method = "email"
         length = getattr(type_, "length", None)
-    elif isinstance(type_, types.SentCodeTypeFragmentSms):
+    elif isinstance(type_, types.auth.SentCodeTypeFragmentSms):
         method = "fragment_sms"
         length = getattr(type_, "length", None)
     else:
@@ -123,7 +123,9 @@ class TelegramAuthService:
         client = self._client(None)
         try:
             await client.connect()
-            sent = await client.send_code_request(phone)
+            # force_sms=True از مسدود شدن به‌دلیل «اشتراک‌گذاری کد» جلوگیری می‌کند؛
+            # کد از طریق پیامک می‌آید و کاربر آن را تایپ می‌کند (نه کپی از چت تلگرام).
+            sent = await client.send_code_request(phone, force_sms=True)
             info = describe_sent_code(sent)
             state = {
                 "phone": phone,

@@ -13,6 +13,9 @@ class WelcomeModule(BaseModule):
         description="خوش‌آمدگویی به اعضای جدید گروه",
         permission="module.welcome.use",
         default_enabled=False,
+        settings_schema={
+            "welcome_text": {"label": "متن خوش‌آمد", "type": "text", "default": "خوش آمدید 👋"},
+        },
     )
 
     @handler("new_message")

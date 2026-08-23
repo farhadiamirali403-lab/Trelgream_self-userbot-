@@ -5,7 +5,7 @@ from __future__ import annotations
 from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse
 
-from app.api.routers import admin, health, plans
+from app.api.routers import admin, auth_web, health, plans
 from app.core.exceptions import AppError
 
 
@@ -20,6 +20,7 @@ def create_app() -> FastAPI:
     app.include_router(health.router)
     app.include_router(plans.router)
     app.include_router(admin.router)
+    app.include_router(auth_web.router)
 
     @app.exception_handler(AppError)
     async def app_error_handler(request: Request, exc: AppError) -> JSONResponse:

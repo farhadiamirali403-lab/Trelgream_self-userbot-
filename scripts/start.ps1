@@ -45,6 +45,19 @@ if ($redisServer) {
     }
 }
 
+# --- Xray proxy (اختیاری — اگر تلگرام در شبکه مسدود است) ---
+$xrayExe = Join-Path $Root '.runtime\xray\xray.exe'
+if (Test-Path $xrayExe) {
+    $xrayRunning = Get-Process -Name "xray" -ErrorAction SilentlyContinue
+    if (-not $xrayRunning) {
+        Write-Step "Starting Xray proxy (127.0.0.1:10808)..."
+        Start-Process -FilePath $xrayExe -ArgumentList "run","-c",(Join-Path $Root '.runtime\xray\config.json') -WorkingDirectory (Join-Path $Root '.runtime\xray') -WindowStyle Hidden
+        Start-Sleep -Seconds 3
+    } else {
+        Write-Step "Xray proxy already running"
+    }
+}
+
 # --- Migrations + seed ---
 Write-Step "Running migrations..."
 & $Python -m alembic upgrade head *> $null
@@ -52,10 +65,10 @@ Write-Step "Seeding data..."
 & $Python scripts\seed.py *> $null
 
 # --- Application processes ---
-function Start-AppProcess([string]$name, [string[]]$args) {
+function Start-AppProcess([string]$name, [string[]]$AppArgs) {
     $out = Join-Path $Logs "$name.out.log"
     $err = Join-Path $Logs "$name.err.log"
-    $proc = Start-Process -FilePath $Python -ArgumentList $args -WorkingDirectory $Root -PassThru -WindowStyle Hidden -RedirectStandardOutput $out -RedirectStandardError $err
+    $proc = Start-Process -FilePath $Python -ArgumentList $AppArgs -WorkingDirectory $Root -PassThru -WindowStyle Hidden -RedirectStandardOutput $out -RedirectStandardError $err
     $proc.Id | Set-Content (Join-Path $Pids "$name.pid")
     Write-Host "  Started $name (PID $($proc.Id))" -ForegroundColor Green
 }

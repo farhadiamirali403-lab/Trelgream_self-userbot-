@@ -90,8 +90,31 @@ class SensitiveFilter(logging.Filter):
         return True
 
 
+class JsonLogger(logging.Logger):
+    """Logger that accepts an ``extra_fields`` kwarg for structured metadata.
+
+    Usage: ``log.info("message", extra_fields={"key": "value"})``.
+    """
+
+    def _log(self, level, msg, args, exc_info=None, extra=None, stack_info=False, stacklevel=1, **kwargs):
+        extra_fields = kwargs.pop("extra_fields", None)
+        if extra_fields is not None:
+            extra = dict(extra or {})
+            extra["extra_fields"] = extra_fields
+        super()._log(
+            level,
+            msg,
+            args,
+            exc_info=exc_info,
+            extra=extra,
+            stack_info=stack_info,
+            stacklevel=stacklevel,
+        )
+
+
 def configure_logging(level: str = "INFO", debug: bool = False) -> None:
     """Configure the root logger for structured JSON output."""
+    logging.setLoggerClass(JsonLogger)
     root = logging.getLogger()
     root.setLevel(logging.DEBUG if debug else getattr(logging, level.upper(), logging.INFO))
     root.handlers.clear()
@@ -106,6 +129,18 @@ def configure_logging(level: str = "INFO", debug: bool = False) -> None:
         logging.getLogger(noisy).setLevel(logging.WARNING)
 
 
-def get_logger(name: str) -> logging.Logger:
-    """Return a named logger."""
-    return logging.getLogger(name)
+class _ExtraFieldsAdapter(logging.LoggerAdapter):
+    """Adapts a standard logger to accept ``extra_fields`` at any call site."""
+
+    def process(self, msg, kwargs):
+        extra_fields = kwargs.pop("extra_fields", None)
+        if extra_fields is not None:
+            extra = dict(kwargs.get("extra") or {})
+            extra["extra_fields"] = extra_fields
+            kwargs["extra"] = extra
+        return msg, kwargs
+
+
+def get_logger(name: str) -> logging.LoggerAdapter:
+    """Return a logger that supports ``extra_fields`` structured metadata."""
+    return _ExtraFieldsAdapter(logging.getLogger(name), {})

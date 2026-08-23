@@ -118,7 +118,10 @@ async def seed_modules(session: AsyncSession) -> None:
                     description=meta["description"],
                     is_core=meta["is_core"],
                     default_enabled=meta["default_enabled"],
-                    meta={"permission": meta["permission"]},
+                    meta={
+                        "permission": meta["permission"],
+                        "not_implemented": meta.get("not_implemented", False),
+                    },
                 )
             )
     await session.flush()

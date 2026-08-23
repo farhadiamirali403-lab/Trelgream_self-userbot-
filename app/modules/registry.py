@@ -38,6 +38,7 @@ class ModuleRegistry:
                 "permission": cls.metadata.permission,
                 "default_enabled": cls.metadata.default_enabled,
                 "is_core": cls.metadata.is_core,
+                "not_implemented": cls.metadata.not_implemented,
             }
             for cls in self.all()
         ]

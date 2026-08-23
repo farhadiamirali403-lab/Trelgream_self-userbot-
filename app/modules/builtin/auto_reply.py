@@ -13,6 +13,9 @@ class AutoReplyModule(BaseModule):
         description="پاسخ خودکار به پیام‌های دریافتی",
         permission="module.auto_reply.use",
         default_enabled=False,
+        settings_schema={
+            "reply_text": {"label": "متن پاسخ", "type": "text", "default": "پیام شما دریافت شد ✅"},
+        },
     )
 
     @handler("new_message")

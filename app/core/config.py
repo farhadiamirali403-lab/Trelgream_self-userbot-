@@ -38,10 +38,18 @@ class Settings(BaseSettings):
     telegram_api_id: int | None = None
     telegram_api_hash: str = ""
     central_bot_token: str = ""
+    # Optional proxy (e.g. "socks5://127.0.0.1:1080" or "http://host:port")
+    telegram_proxy: str = ""
 
     # --- Security ---
     session_encryption_key: str = ""
     admin_api_key: str = ""
+
+    # --- Web ---
+    # آدرس عمومی بک‌اند برای لینک احراز هویت وب (مثلاً http://192.168.1.10:8000).
+    # اگر خالی باشد، IP محلی به‌صورت خودکار تشخیص داده می‌شود.
+    web_base_url: str = ""
+    backend_port: int = 8000
 
     # --- Owner ---
     owner_telegram_id: int | None = None
@@ -88,6 +96,31 @@ class Settings(BaseSettings):
                 "TELEGRAM_API_ID / TELEGRAM_API_HASH تنظیم نشده‌اند. "
                 "آن‌ها را در .env قرار دهید."
             )
+
+    def resolve_web_base_url(self) -> str:
+        """Return the reachable base URL for the web auth page.
+
+        Uses ``web_base_url`` when set, otherwise auto-detects the LAN IP so
+        the link works from other computers on the same network.
+        """
+        if self.web_base_url:
+            return self.web_base_url.rstrip("/")
+        return f"http://{get_lan_ip()}:{self.backend_port}"
+
+
+def get_lan_ip() -> str:
+    """Detect the primary LAN IPv4 address (falls back to 127.0.0.1)."""
+    import socket
+
+    s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+    try:
+        # UDP connect does not send packets; it only selects the route.
+        s.connect(("8.8.8.8", 80))
+        return s.getsockname()[0]
+    except Exception:  # noqa: BLE001
+        return "127.0.0.1"
+    finally:
+        s.close()
 
 
 @lru_cache

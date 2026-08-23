@@ -15,8 +15,8 @@ def main() -> None:
     configure_logging("INFO", settings.debug)
     uvicorn.run(
         "app.api.app:app",
-        host="127.0.0.1",
-        port=8000,
+        host="0.0.0.0",  # reachable from other computers on the network
+        port=settings.backend_port,
         reload=False,
         loop="none",  # use the selector loop configured by configure_event_loop()
     )

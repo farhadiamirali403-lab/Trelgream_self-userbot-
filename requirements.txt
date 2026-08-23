@@ -25,6 +25,10 @@ argon2-cffi>=23.1
 tenacity>=8.2
 httpx>=0.27
 
+# ---- Proxy support (برای اتصال Telethon از طریق SOCKS5) ----
+python-socks>=2.0
+PySocks>=1.7
+
 # ---- Storage (اختیاری، برای production S3) ----
 boto3>=1.34
 

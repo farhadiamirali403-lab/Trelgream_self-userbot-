@@ -2,15 +2,19 @@
 
 from __future__ import annotations
 
+from sqlalchemy import select
 from telethon import Button, TelegramClient, events
 
 from app.auth.permissions import Permissions
 from app.auth.rbac import admin_has_permission, get_admin_by_telegram_id
 from app.billing.service import BillingService
+from app.bot.state import ConversationState
 from app.core.config import Settings
 from app.core.logging import get_logger
 from app.core.redis import get_redis
 from app.core.security import CommandSigner, SessionCipher
+from app.database.models.admins import Admin, AdminRole, Role
+from app.database.models.support import SupportTicket
 from app.database.models.userbots import Userbot
 from app.database.models.users import User
 from app.database.session import async_session_factory
@@ -29,10 +33,12 @@ class AdminPanel:
         self.redis = get_redis()
         self.cipher = SessionCipher(settings.session_encryption_key)
         self.command_bus = CommandBus(self.redis, CommandSigner(settings.session_encryption_key or "cmd"))
+        self.state = ConversationState(self.redis)
 
     def register(self) -> None:
         self.client.add_event_handler(self.on_admin, events.NewMessage(pattern="/admin"))
         self.client.add_event_handler(self.on_callback, events.CallbackQuery())
+        self.client.add_event_handler(self.on_admin_message, events.NewMessage(incoming=True))
 
     # ------------------------------------------------------------------ auth
 
@@ -70,6 +76,8 @@ class AdminPanel:
             [Button.inline("💰 پرداخت‌های در انتظار", b"adm_payments")],
             [Button.inline("🤖 Userbotها", b"adm_userbots")],
             [Button.inline("👥 کاربران", b"adm_users")],
+            [Button.inline("👮 مدیران", b"adm_admins")],
+            [Button.inline("🎫 پشتیبانی", b"adm_tickets")],
             [Button.inline("📊 آمار", b"adm_stats")],
         ]
         await event.respond(f"👑 پنل {role}\n\nاز گزینه‌ها استفاده کنید.", buttons=buttons)
@@ -87,6 +95,19 @@ class AdminPanel:
                 await self._users(event, tg_id)
             elif data == "adm_stats":
                 await self._stats(event, tg_id)
+            elif data == "adm_admins":
+                await self._show_admins(event, tg_id)
+            elif data == "adm_add_admin":
+                await self._ask_admin_id(event, tg_id)
+            elif data == "cancel_admin":
+                await self.state.clear(tg_id)
+                await event.respond("لغو شد.")
+            elif data.startswith("adm_del_admin:"):
+                await self._del_admin(event, tg_id, int(data.split(":", 1)[1]))
+            elif data == "adm_tickets":
+                await self._show_tickets(event, tg_id)
+            elif data.startswith("ticket_close:"):
+                await self._close_ticket(event, tg_id, int(data.split(":", 1)[1]))
             elif data.startswith("approve:"):
                 await self._approve(event, tg_id, int(data.split(":", 1)[1]))
             elif data.startswith("reject:"):
@@ -206,3 +227,116 @@ class AdminPanel:
                 await service.request_stop(userbot_id, actor_id=admin_id, actor_role=role)
             await session.commit()
             await event.respond(f"✅ دستور {action} برای Userbot #{userbot_id} ارسال شد.")
+
+    # ------------------------------------------------------------------ admins
+
+    async def on_admin_message(self, event) -> None:
+        if event.message.message and event.message.message.startswith("/"):
+            return
+        current = await self.state.get(event.sender_id)
+        if current is None:
+            return
+        state, _ = current
+        if state == "awaiting_admin_id":
+            await self._handle_admin_id(event)
+
+    async def _show_admins(self, event, tg_id: int) -> None:
+        async with async_session_factory() as session:
+            if not await self._require(session, tg_id, Permissions.ADMINS_MANAGE):
+                await event.respond("⛔️ دسترسی مجاز نیست.")
+                return
+            admins = (await session.execute(select(Admin).order_by(Admin.id))).scalars().all()
+        rows = []
+        for a in admins:
+            roles = ", ".join(r.name for r in a.roles) or "—"
+            rows.append([Button.inline(f"🗑 {a.telegram_id} — {roles}", f"adm_del_admin:{a.id}".encode())])
+        rows.append([Button.inline("➕ افزودن ادمین", b"adm_add_admin")])
+        await event.respond("👮 مدیران\n\nبرای حذف روی هر ادمین بزنید:", buttons=rows)
+
+    async def _ask_admin_id(self, event, tg_id: int) -> None:
+        await self.state.set(tg_id, "awaiting_admin_id", {})
+        await event.respond(
+            "شناسه عددی تلگرام ادمین جدید را بفرست (مثلاً 123456789):",
+            buttons=[[Button.inline("❌ لغو", b"cancel_admin")]],
+        )
+
+    async def _handle_admin_id(self, event) -> None:
+        tg_id = event.sender_id
+        raw = (event.message.message or "").strip()
+        try:
+            admin_tg = int(raw)
+        except ValueError:
+            await event.respond("شناسه نامعتبر است؛ عدد بفرست.", buttons=[[Button.inline("❌ لغو", b"cancel_admin")]])
+            return
+        async with async_session_factory() as session:
+            if not await self._require(session, tg_id, Permissions.ADMINS_MANAGE):
+                await event.respond("⛔️ دسترسی مجاز نیست.")
+                return
+            existing = (
+                await session.execute(select(Admin).where(Admin.telegram_id == str(admin_tg)))
+            ).scalar_one_or_none()
+            if existing is not None:
+                await self.state.clear(tg_id)
+                await event.respond("این شناسه قبلاً ادمین است.")
+                return
+            admin = Admin(telegram_id=str(admin_tg), name="", is_active=True)
+            session.add(admin)
+            await session.flush()
+            admin_role = (await session.execute(select(Role).where(Role.name == "ADMIN"))).scalar_one()
+            session.add(AdminRole(admin_id=admin.id, role_id=admin_role.id))
+            await session.commit()
+        await self.state.clear(tg_id)
+        await event.respond(f"✅ ادمین {admin_tg} با نقش ADMIN اضافه شد.")
+        await self._show_admins(event, tg_id)
+
+    async def _del_admin(self, event, tg_id: int, admin_id: int) -> None:
+        async with async_session_factory() as session:
+            if not await self._require(session, tg_id, Permissions.ADMINS_MANAGE):
+                await event.respond("⛔️ دسترسی مجاز نیست.")
+                return
+            admin = await session.get(Admin, admin_id)
+            if admin is None:
+                await event.answer("یافت نشد")
+                return
+            if self.settings.owner_telegram_id and admin.telegram_id == str(self.settings.owner_telegram_id):
+                await event.answer("Owner قابل حذف نیست")
+                return
+            await session.delete(admin)
+            await session.commit()
+        await event.answer("حذف شد")
+        await self._show_admins(event, tg_id)
+
+    # ------------------------------------------------------------------ support tickets
+
+    async def _show_tickets(self, event, tg_id: int) -> None:
+        async with async_session_factory() as session:
+            if not await self._require(session, tg_id, Permissions.SUPPORT_MANAGE):
+                await event.respond("⛔️ دسترسی مجاز نیست.")
+                return
+            tickets = (
+                await session.execute(
+                    select(SupportTicket)
+                    .where(SupportTicket.status == "open")
+                    .order_by(SupportTicket.id.desc())
+                    .limit(20)
+                )
+            ).scalars().all()
+        if not tickets:
+            await event.respond("تیکت بازی وجود ندارد.")
+            return
+        for t in tickets:
+            await event.respond(
+                f"🎫 تیکت #{t.id} — کاربر {t.user_id}\n\n{t.message[:300]}",
+                buttons=[[Button.inline("✅ بستن", f"ticket_close:{t.id}".encode())]],
+            )
+
+    async def _close_ticket(self, event, tg_id: int, ticket_id: int) -> None:
+        async with async_session_factory() as session:
+            if not await self._require(session, tg_id, Permissions.SUPPORT_MANAGE):
+                await event.respond("⛔️ دسترسی مجاز نیست.")
+                return
+            ticket = await session.get(SupportTicket, ticket_id)
+            if ticket is not None:
+                ticket.status = "closed"
+                await session.commit()
+        await event.answer("بسته شد")

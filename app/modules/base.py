@@ -22,6 +22,11 @@ class ModuleMetadata:
     permission: str | None = None
     default_enabled: bool = False
     is_core: bool = False
+    # Settings schema for the panel UI:
+    #   key -> {"label": str, "type": "text"|"choice"|"keywords", "choices": {...}, "default": ...}
+    settings_schema: dict = field(default_factory=dict)
+    # True when the feature is declared in the architecture but not yet built.
+    not_implemented: bool = False
 
 
 @dataclass

@@ -17,6 +17,14 @@ class AntiLinkModule(BaseModule):
         description="حذف یا هشدار لینک‌های ارسالی در گروه",
         permission="module.anti_link.use",
         default_enabled=False,
+        settings_schema={
+            "mode": {
+                "label": "حالت",
+                "type": "choice",
+                "choices": {"delete": "🗑 حذف لینک", "warn": "⚠️ هشدار"},
+                "default": "delete",
+            },
+        },
     )
 
     @handler("new_message")

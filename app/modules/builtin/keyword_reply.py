@@ -13,6 +13,9 @@ class KeywordReplyModule(BaseModule):
         description="پاسخ خودکار بر اساس کلیدواژه‌ها",
         permission="module.keyword_reply.use",
         default_enabled=False,
+        settings_schema={
+            "keywords": {"label": "کلیدواژه‌ها", "type": "keywords", "default": {}},
+        },
     )
 
     @handler("new_message")

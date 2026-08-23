@@ -4,14 +4,12 @@ from __future__ import annotations
 
 import asyncio
 
-from telethon import TelegramClient
-from telethon.sessions import StringSession
-
 from app.bot.admin_panel import AdminPanel
 from app.bot.bot import CentralBot
 from app.core.config import get_settings
 from app.core.eventloop import configure_event_loop
 from app.core.logging import configure_logging
+from app.telegram.client_factory import build_bot_client
 
 
 def main() -> None:
@@ -22,12 +20,10 @@ def main() -> None:
         raise RuntimeError("CENTRAL_BOT_TOKEN تنظیم نشده است")
     settings.ensure_telegram_credentials()
 
-    client = TelegramClient(
-        StringSession(),
-        settings.telegram_api_id,
-        settings.telegram_api_hash,
-        device_model="TelegramSaaSCentral",
-    )
+    # Import to populate the module registry (for the module settings UI).
+    import app.modules.builtin  # noqa: F401
+
+    client = build_bot_client(settings.central_bot_token, settings)
     bot = CentralBot(settings, client)
     AdminPanel(settings, client).register()
     try:
