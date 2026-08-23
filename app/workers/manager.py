@@ -113,6 +113,7 @@ class WorkerManager:
                 registry=self.registry,
                 module_classes=module_classes,
                 module_settings=module_settings,
+                command_bus=self.command_bus,
             )
             self.runtimes[userbot.id] = runtime
             task = asyncio.create_task(self._run_userbot(userbot, runtime))

@@ -57,13 +57,21 @@ class CentralBot:
     def register_handlers(self) -> None:
         for pattern, handler in [
             ("/start", self.on_start),
+            ("/شروع", self.on_start),
             ("/help", self.on_help),
+            ("/کمک", self.on_help),
             ("/panel", self.on_panel),
+            ("/پنل", self.on_panel),
             ("/account", self.on_account),
+            ("/حساب", self.on_account),
             ("/subscription", self.on_subscription),
+            ("/اشتراک", self.on_subscription),
             ("/userbot", self.on_userbot),
+            ("/سلف", self.on_userbot),
             ("/settings", self.on_settings),
+            ("/تنظیمات", self.on_settings),
             ("/support", self.on_support),
+            ("/پشتیبانی", self.on_support),
         ]:
             self.client.add_event_handler(handler, events.NewMessage(pattern=pattern))
         self.client.add_event_handler(self.on_message, events.NewMessage(incoming=True))
@@ -210,6 +218,8 @@ class CentralBot:
             await self._show_modules(event)
         elif data.startswith("mod_cat:"):
             await self._show_category(event, data.split(":", 1)[1])
+        elif data.startswith("mod_detail:"):
+            await self._show_module_detail(event, int(data.split(":", 1)[1]))
         elif data.startswith("mod_toggle:"):
             await self._toggle_module(event, int(data.split(":", 1)[1]))
         elif data.startswith("mod_ni:"):
@@ -276,9 +286,9 @@ class CentralBot:
                 await self._handle_setting_text(event, data)
             elif state == "kw_setting":
                 await self._handle_keyword(event, data)
-            elif state == "auto_cond":
+            elif state == "auto_conds":
                 await self._handle_auto_cond(event, data)
-            elif state == "auto_reply":
+            elif state == "auto_actions":
                 await self._handle_auto_reply(event, data)
             elif state == "sched_text":
                 await self._handle_sched_text(event, data)
@@ -357,14 +367,19 @@ class CentralBot:
 
     async def _start_payment(self, event, plan_id: int) -> None:
         tg_id = event.query.user_id if hasattr(event, "query") else event.sender_id
+        from sqlalchemy import select
+
+        from app.database.models.settings import PaymentSetting
+
         async with async_session_factory() as session:
             user = await UserService(session).get_or_create(tg_id)
             payment = await BillingService(session).purchase(user.id, plan_id)
+            ps = (await session.execute(select(PaymentSetting).order_by(PaymentSetting.id))).scalars().first()
             await session.commit()
             reference = payment.reference
             amount = payment.amount
-        card = self.settings.payment_card_number or "—"
-        owner = self.settings.payment_card_owner or "—"
+        card = (ps.card_number if ps and ps.card_number else self.settings.payment_card_number) or "—"
+        owner = (ps.card_owner if ps and ps.card_owner else self.settings.payment_card_owner) or "—"
         await self.state.set(tg_id, "awaiting_receipt", {"payment_id": payment.id})
         await event.respond(
             tx.PAYMENT_CARD.format(amount=amount, card_number=card, card_owner=owner),
@@ -454,16 +469,54 @@ class CentralBot:
         for m in modules:
             cls = registry.get(m.key)
             not_impl = cls.metadata.not_implemented if cls else False
-            if not_impl:
-                rows.append([Button.inline(f"⏳ {m.name}", f"mod_ni:{m.id}".encode())])
-                continue
-            is_on = m.id in enabled_ids
-            row = [Button.inline(f"{'✅' if is_on else '❌'} {m.name}", f"mod_toggle:{m.id}".encode())]
-            if is_on and cls and cls.metadata.settings_schema:
-                row.append(Button.inline("⚙️", f"mod_config:{m.id}".encode()))
-            rows.append(row)
+            prefix = "⏳" if not_impl else ("✅" if m.id in enabled_ids else "❌")
+            rows.append([Button.inline(f"{prefix} {m.name}", f"mod_detail:{m.id}".encode())])
         rows.append([Button.inline("🔙 بازگشت", b"modules")])
-        text = f"🧩 {CATEGORY_NAMES.get(category, category)}\n\nبرای فعال/غیرفعال کردن بزنید:"
+        text = f"🧩 {CATEGORY_NAMES.get(category, category)}\n\nروی هر قابلیت بزنید تا توضیح و تنظیمات آن را ببینید:"
+        if hasattr(event, "edit"):
+            await event.edit(text, buttons=rows)
+        else:
+            await event.respond(text, buttons=rows)
+
+    async def _show_module_detail(self, event, module_id: int) -> None:
+        tg_id = event.sender_id if hasattr(event, "sender_id") else event.query.user_id
+        from sqlalchemy import select
+
+        from app.database.models.modules import Module, UserModule
+
+        async with async_session_factory() as session:
+            user = await UserService(session).repo.get_by_telegram_id(tg_id)
+            if user is None:
+                await event.respond(tx.NOT_AUTHORIZED, buttons=kb.back_panel())
+                return
+            module = await session.get(Module, module_id)
+            if module is None:
+                await event.respond("ماژول یافت نشد.", buttons=kb.back_panel())
+                return
+            um = (
+                await session.execute(
+                    select(UserModule).where(
+                        UserModule.user_id == user.id, UserModule.module_id == module_id
+                    )
+                )
+            ).scalar_one_or_none()
+            enabled = bool(um and um.enabled)
+        cls = registry.get(module.key)
+        not_impl = cls.metadata.not_implemented if cls else False
+        rows = []
+        if not_impl:
+            rows.append([Button.inline("⏳ هنوز پیاده‌سازی نشده (NOT IMPLEMENTED)", f"mod_ni:{module_id}".encode())])
+        else:
+            if enabled:
+                rows.append([Button.inline("❌ غیرفعال کن", f"mod_toggle:{module_id}".encode())])
+            else:
+                rows.append([Button.inline("✅ فعال کن", f"mod_toggle:{module_id}".encode())])
+            if enabled and cls and cls.metadata.settings_schema:
+                rows.append([Button.inline("⚙️ تنظیمات", f"mod_config:{module_id}".encode())])
+        rows.append([Button.inline("🔙 بازگشت", f"mod_cat:{module.category}".encode())])
+        status = "✅ فعال" if enabled else "❌ غیرفعال"
+        title = f"⏳ {module.name}" if not_impl else module.name
+        text = f"{title}\n\n📝 {module.description or 'بدون توضیح'}\n\nوضعیت: {status}"
         if hasattr(event, "edit"):
             await event.edit(text, buttons=rows)
         else:
@@ -671,19 +724,78 @@ class CentralBot:
 
     async def _ask_auto_condition(self, event) -> None:
         tg_id = event.query.user_id if hasattr(event, "query") else event.sender_id
-        await self.state.set(tg_id, "auto_cond", {})
-        await event.respond("🔍 کلمه‌ای که اگر در پیام بود... (برای همهٔ پیام‌ها * بفرست):", buttons=kb.cancel())
+        await self.state.set(tg_id, "auto_conds", {"conds": []})
+        await event.respond(
+            "🔍 شرط را بفرست (یا done برای رد کردن):\n\n"
+            "قالب شرط: میدان:عملگر:مقدار\n"
+            "میدان‌ها: text / chat / sender\n"
+            "عملگرها: contains / eq / regex / startswith\n\n"
+            "مثال: text:contains:سلام\n"
+            "مثال: chat:eq:-100123\n\n"
+            "برای شرط نداشتن: done",
+            buttons=kb.cancel(),
+        )
 
     async def _handle_auto_cond(self, event, data: dict) -> None:
         tg_id = event.sender_id
-        cond = (event.message.message or "").strip()
-        await self.state.set(tg_id, "auto_reply", {"cond": cond})
-        await event.respond("💬 پاسخ چه باشد؟", buttons=kb.cancel())
+        raw = (event.message.message or "").strip()
+        conds = list(data.get("conds", []))
+        if raw.lower() == "done":
+            await self.state.set(tg_id, "auto_actions", {"conds": conds, "actions": []})
+            await event.respond(
+                "⚡️ عمل را بفرست (یا done برای پایان):\n\n"
+                "• reply:متن — پاسخ با متن\n"
+                "• delete — حذف پیام\n"
+                "• forward:آیدی — فوروارد به چت\n\n"
+                "مثال: reply:سلام 👋",
+                buttons=kb.cancel(),
+            )
+            return
+        parts = raw.split(":", 2)
+        if len(parts) != 3:
+            await event.respond("فرمت شرط اشتباه است. مثال: text:contains:سلام", buttons=kb.cancel())
+            return
+        field, op, value = parts[0].strip(), parts[1].strip(), parts[2].strip()
+        if field not in ("text", "chat", "sender") or op not in ("contains", "eq", "regex", "startswith"):
+            await event.respond("میدان یا عملگر نامعتبر است.", buttons=kb.cancel())
+            return
+        conds.append({"field": field, "op": op, "value": value, "logic": "AND"})
+        await self.state.set(tg_id, "auto_conds", {"conds": conds})
+        await event.respond(f"✅ شرط اضافه شد ({len(conds)}). شرط بعدی یا done:", buttons=kb.cancel())
 
     async def _handle_auto_reply(self, event, data: dict) -> None:
         tg_id = event.sender_id
-        reply = (event.message.message or "").strip()
-        cond = data.get("cond", "")
+        raw = (event.message.message or "").strip()
+        conds = list(data.get("conds", []))
+        actions = list(data.get("actions", []))
+        if raw.lower() == "done":
+            if not actions:
+                await event.respond("حداقل یک عمل لازم است.", buttons=kb.cancel())
+                return
+            await self._save_automation_rule(event, tg_id, conds, actions)
+            return
+        action_type, payload = self._parse_action(raw)
+        if action_type is None:
+            await event.respond(
+                "فرمت عمل اشتباه است. مثال: reply:سلام یا delete یا forward:آیدی",
+                buttons=kb.cancel(),
+            )
+            return
+        actions.append({"type": action_type, "payload": payload})
+        await self.state.set(tg_id, "auto_actions", {"conds": conds, "actions": actions})
+        await event.respond(f"✅ عمل اضافه شد ({len(actions)}). عمل بعدی یا done:", buttons=kb.cancel())
+
+    @staticmethod
+    def _parse_action(raw: str):
+        if raw.startswith("reply:"):
+            return "reply", {"text": raw[6:].strip()}
+        if raw == "delete":
+            return "delete", {}
+        if raw.startswith("forward:"):
+            return "forward", {"to_chat": raw[8:].strip()}
+        return None, None
+
+    async def _save_automation_rule(self, event, tg_id: int, conds: list, actions: list) -> None:
         from app.database.models.automation import AutomationAction, AutomationCondition, AutomationRule
 
         async with async_session_factory() as session:
@@ -693,28 +805,30 @@ class CentralBot:
                 return
             rule = AutomationRule(
                 user_id=user.id,
-                name=f"قانون «{cond}»",
+                name=f"قانون ({len(conds)} شرط، {len(actions)} عمل)",
                 trigger_type="new_message",
                 enabled=True,
                 priority=100,
             )
             session.add(rule)
             await session.flush()
-            if cond and cond != "*":
+            for i, c in enumerate(conds):
                 session.add(
                     AutomationCondition(
-                        rule_id=rule.id, field="text", operator="contains",
-                        value={"value": cond}, logic="AND",
+                        rule_id=rule.id, field=c["field"], operator=c["op"],
+                        value={"value": c["value"]}, logic=c.get("logic", "AND"),
                     )
                 )
-            session.add(
-                AutomationAction(
-                    rule_id=rule.id, action_type="reply", payload={"text": reply}, sort_order=0
+            for i, a in enumerate(actions):
+                session.add(
+                    AutomationAction(
+                        rule_id=rule.id, action_type=a["type"],
+                        payload=a["payload"], sort_order=i,
+                    )
                 )
-            )
             await session.commit()
         await self.state.clear(tg_id)
-        await event.respond("✅ قانون ساخته شد")
+        await event.respond("✅ قانون اتوماسیون ساخته شد")
         await self._show_automation(event)
 
     async def _del_rule(self, event, rule_id: int) -> None:

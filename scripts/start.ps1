@@ -21,8 +21,9 @@ if (Test-Path $pgCtl) {
     & $pgCtl -D $PgData status *> $null
     if ($LASTEXITCODE -ne 0) {
         Write-Step "Starting PostgreSQL..."
-        & $pgCtl -D $PgData -l (Join-Path $Logs 'postgres.log') -o "-p 5432" start *> $null
-        Start-Sleep -Seconds 2
+        # Detached so the server survives this script's console.
+        Start-Process -FilePath $pgCtl -ArgumentList "-D",$PgData,"-l",(Join-Path $Logs 'postgres.log'),"-o","-p 5432","start" -WindowStyle Hidden
+        Start-Sleep -Seconds 3
     } else {
         Write-Step "PostgreSQL already running"
     }

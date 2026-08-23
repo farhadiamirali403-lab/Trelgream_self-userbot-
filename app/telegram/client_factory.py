@@ -59,6 +59,7 @@ def build_bot_client(token: str, settings: Settings) -> TelegramClient:
         device_model="TelegramSaaSCentral",
     )
     client.session = StringSession()
+    client.parse_mode = "html"
     return client
 
 

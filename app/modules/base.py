@@ -109,3 +109,42 @@ class BaseModule:
 
     def setting(self, key: str, default: Any = None) -> Any:
         return self.context.settings.get(key, default)
+
+    async def persist_setting(self, key: str, value: Any) -> None:
+        """Update a setting in-memory and persist it to the database."""
+        from sqlalchemy import select
+
+        from app.database.models.modules import Module, ModuleSetting, UserModule
+        from app.database.session import async_session_factory
+
+        self.context.settings[key] = value  # immediate in-memory effect
+        async with async_session_factory() as session:
+            module = (
+                await session.execute(
+                    select(Module).where(Module.key == self.metadata.key)
+                )
+            ).scalar_one_or_none()
+            if module is None:
+                return
+            um = (
+                await session.execute(
+                    select(UserModule).where(
+                        UserModule.user_id == self.context.user_id,
+                        UserModule.module_id == module.id,
+                    )
+                )
+            ).scalar_one_or_none()
+            if um is None:
+                return
+            setting = (
+                await session.execute(
+                    select(ModuleSetting).where(
+                        ModuleSetting.user_module_id == um.id, ModuleSetting.key == key
+                    )
+                )
+            ).scalar_one_or_none()
+            if setting is None:
+                session.add(ModuleSetting(user_module_id=um.id, key=key, value=value))
+            else:
+                setting.value = value
+            await session.commit()
