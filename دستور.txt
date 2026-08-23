@@ -1,0 +1,5 @@
+cd C:\telegram-saas
+.\scripts\status.ps1     # ببین همه بالا هستند؟
+.\scripts\restart.ps1    # ری‌استارت همه
+.\scripts\stop.ps1       # توقف همه
+.\scripts\start.ps1      # روشن کردن همه (بعد از ری‌استارت ویندوز)
