@@ -1,0 +1,34 @@
+# ---- Core web ----
+fastapi>=0.115
+uvicorn[standard]>=0.30
+pydantic>=2.7
+pydantic-settings>=2.2
+python-multipart>=0.0.9
+
+# ---- Database (async, Windows-first) ----
+sqlalchemy[asyncio]>=2.0.30
+psycopg[binary]>=3.1.18
+alembic>=1.13
+aiosqlite>=0.20
+
+# ---- Telegram ----
+telethon>=1.41
+
+# ---- Cache / Queue ----
+redis>=5.0
+
+# ---- Security ----
+cryptography>=42.0
+argon2-cffi>=23.1
+
+# ---- Robustness ----
+tenacity>=8.2
+httpx>=0.27
+
+# ---- Storage (اختیاری، برای production S3) ----
+boto3>=1.34
+
+# ---- Dev / Test ----
+pytest>=8.0
+pytest-asyncio>=0.23
+ruff>=0.4

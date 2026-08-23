@@ -1,0 +1,36 @@
+# Environment & secrets
+.env
+.env.*
+!.env.example
+
+# Python
+.venv/
+venv/
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+
+# Telegram sessions (NEVER commit)
+*.session
+*.session-journal
+
+# Data / storage / logs / backups
+storage/
+logs/
+backups/
+*.db
+*.sqlite3
+
+# Local tooling
+.idea/
+.vscode/
+*.swp
+
+# Portable infra (downloaded locally)
+.runtime/
